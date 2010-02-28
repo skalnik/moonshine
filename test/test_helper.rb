@@ -1,5 +1,6 @@
 require 'rubygems'
-require 'test/unit'
+require 'spec/autorun'
+require 'spec/test/unit'
 require 'ginger'
 
 require 'pathname'
@@ -30,7 +31,6 @@ Test::Unit::TestCase.class_eval do
   end
 
   def self.generator_rails_root
-    breakpoint
     $here.join('generator_rails_root')
   end
 
