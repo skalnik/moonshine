@@ -10,25 +10,25 @@ class Moonshine::Manifest::ApacheTest < Test::Unit::TestCase
 
     apache2_conf_content = @manifest.files['/etc/apache2/apache2.conf'].content
 
-    assert_kind_of Hash, @manifest.configuration[:apache]
+    @manifest.configuration[:apache].should be_kind_of(Hash)
 
-    assert_equal 'Off', @manifest.configuration[:apache][:keep_alive]
-    assert_apache_directive apache2_conf_content, 'KeepAlive', 'Off'
+    @manifest.configuration[:apache][:keep_alive].should == 'Off'
+    apache2_conf_content.should have_apache_directive('KeepAlive', 'Off')
 
-    assert_equal 100, @manifest.configuration[:apache][:max_keep_alive_requests]
-    assert_apache_directive apache2_conf_content, 'MaxKeepAliveRequests', 100
+    @manifest.configuration[:apache][:max_keep_alive_requests].should == 100
+    apache2_conf_content.should have_apache_directive('MaxKeepAliveRequests', 100)
 
-    assert_equal 15, @manifest.configuration[:apache][:keep_alive_timeout]
-    assert_apache_directive apache2_conf_content, 'KeepAliveTimeout', 15
+    @manifest.configuration[:apache][:keep_alive_timeout].should == 15
+    apache2_conf_content.should have_apache_directive('KeepAliveTimeout', 15)
 
-    assert_equal 150, @manifest.configuration[:apache][:max_clients]
-    assert_apache_directive apache2_conf_content, 'MaxClients', 150
+    @manifest.configuration[:apache][:max_clients].should == 150
+    apache2_conf_content.should have_apache_directive('MaxClients', 150)
 
-    assert_equal 16, @manifest.configuration[:apache][:server_limit]
-    assert_apache_directive apache2_conf_content, 'ServerLimit', 16
+    @manifest.configuration[:apache][:server_limit].should == 16
+    apache2_conf_content.should have_apache_directive('ServerLimit', 16)
 
-    assert_equal 300, @manifest.configuration[:apache][:timeout]
-    assert_apache_directive apache2_conf_content, 'Timeout', 300
+    @manifest.configuration[:apache][:timeout].should == 300
+    apache2_conf_content.should have_apache_directive('Timeout', 300)
   end
 
   def test_overridden_configuration_early
@@ -44,24 +44,24 @@ class Moonshine::Manifest::ApacheTest < Test::Unit::TestCase
 
     apache2_conf_content = @manifest.files['/etc/apache2/apache2.conf'].content
 
-    assert_equal 600, @manifest.configuration[:apache][:timeout]
-    assert_apache_directive apache2_conf_content, 'Timeout', 600
+    @manifest.configuration[:apache][:timeout].should == 600
+    apache2_conf_content.should have_apache_directive('Timeout', 600)
 
-    assert_equal 'On', @manifest.configuration[:apache][:keep_alive]
-    assert_apache_directive apache2_conf_content, 'KeepAlive', 'On'
+    @manifest.configuration[:apache][:keep_alive].should == 'On'
+    apache2_conf_content.should have_apache_directive('KeepAlive', 'On')
 
-    assert_equal 200, @manifest.configuration[:apache][:max_keep_alive_requests]
-    assert_apache_directive apache2_conf_content, 'MaxKeepAliveRequests', 200
+    @manifest.configuration[:apache][:max_keep_alive_requests].should == 200
+    apache2_conf_content.should have_apache_directive('MaxKeepAliveRequests', 200)
 
-    assert_equal 30, @manifest.configuration[:apache][:keep_alive_timeout]
-    assert_apache_directive apache2_conf_content, 'KeepAliveTimeout', 30
+    @manifest.configuration[:apache][:keep_alive_timeout].should == 30
+    apache2_conf_content.should have_apache_directive('KeepAliveTimeout', 30)
 
     in_apache_if_module apache2_conf_content, 'mpm_worker_module' do |mpm_worker_module|
-      assert_equal 300, @manifest.configuration[:apache][:max_clients]
-      assert_apache_directive mpm_worker_module, 'MaxClients', 300
+      @manifest.configuration[:apache][:max_clients].should == 300
+      mpm_worker_module.should have_apache_directive('MaxClients', 300)
 
-      assert_equal 32, @manifest.configuration[:apache][:server_limit]
-      assert_apache_directive mpm_worker_module, 'ServerLimit', 32
+      @manifest.configuration[:apache][:server_limit].should == 32
+      mpm_worker_module.should have_apache_directive('ServerLimit', 32)
     end
 
   end
@@ -72,22 +72,23 @@ class Moonshine::Manifest::ApacheTest < Test::Unit::TestCase
 
     apache2_conf_content = @manifest.files['/etc/apache2/apache2.conf'].content
 
-    assert_equal 'On', @manifest.configuration[:apache][:keep_alive]
-    assert_apache_directive apache2_conf_content, 'KeepAlive', 'On'
+    @manifest.configuration[:apache][:keep_alive].should == 'On'
+    apache2_conf_content.should have_apache_directive('KeepAlive', 'On')
   end
 
   def test_default_keepalive_off
     @manifest.apache_server
 
     apache2_conf_content = @manifest.files['/etc/apache2/apache2.conf'].content
-    assert_apache_directive apache2_conf_content, 'KeepAlive', 'Off'
+    apache2_conf_content.should have_apache_directive('KeepAlive', 'Off')
   end
 
   def test_installs_apache
     @manifest.apache_server
 
-    assert_not_nil apache = @manifest.services["apache2"]
-    assert_equal @manifest.package('apache2-mpm-worker').to_s, apache.require.to_s
+    apache = @manifest.services["apache2"]
+    apache.should_not == nil
+    apache.require.to_s.should == @manifest.package('apache2-mpm-worker').to_s
   end
 
   def test_enables_mod_ssl_if_ssl
@@ -99,19 +100,19 @@ class Moonshine::Manifest::ApacheTest < Test::Unit::TestCase
 
     @manifest.apache_server
 
-    assert_not_nil @manifest.execs.find { |n, r| r.command == '/usr/sbin/a2enmod ssl' }
+    @manifest.execs.find { |n, r| r.command == '/usr/sbin/a2enmod ssl' }.should_not == nil
   end
 
   def test_enables_mod_rewrite
     @manifest.apache_server
 
-    assert_not_nil apache = @manifest.execs["a2enmod rewrite"]
+    @manifest.execs["a2enmod rewrite"].should_not == nil
   end
 
   def test_enables_mod_status
     @manifest.apache_server
 
-    assert_not_nil apache = @manifest.execs["a2enmod status"]
-    assert_match /127.0.0.1/, @manifest.files["/etc/apache2/mods-available/status.conf"].content
+    @manifest.execs["a2enmod status"].should_not == nil
+    @manifest.files["/etc/apache2/mods-available/status.conf"].content.should match(/127.0.0.1/)
   end
 end

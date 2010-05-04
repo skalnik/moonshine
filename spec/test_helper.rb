@@ -11,6 +11,7 @@ require 'rails/version'
 if Rails::VERSION::MAJOR == 2
   require 'support/rails_2_generator_kludge'
 end
+require 'support/moonshine_matchers'
 
 require 'moonshine'
 require 'shadow_puppet/test'
@@ -42,30 +43,14 @@ Test::Unit::TestCase.class_eval do
   end
 
   def assert_apache_directive(contents, directive, value)
-    # Make sure directive is there first
-    assert_match directive, contents
-    assert_block "Wasn't able to find a value for <#{directive}>" do
-      if contents =~ /^\s*#{directive}\s+(\w+)[^#\n]*/
-        assert_block "Expected <#{value}> for <#{directive}>, but got <#{$1}>" do
-          $1 == value.to_s
-        end
-        true
-      else
-        false
-      end
-    end
+    contents.should have_apache_directive(directive, value)
   end
 
   def in_apache_if_module(contents, some_module)
-    assert_block "Doesn't contain <IfModule #{some_module}>" do
-      if contents =~ /<IfModule #{some_module}>(.*)<\/IfModule>/m
-        yield $1 if block_given?
-        true
-      else
-        false
-      end
-    end
-    
+    contents.should =~ /<IfModule #{some_module}>(.*)<\/IfModule>/m
+
+    contents.match(/<IfModule #{some_module}>(.*)<\/IfModule>/m)
+    yield $1 if block_given?
   end
 
 end
