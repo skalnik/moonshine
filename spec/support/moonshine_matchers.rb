@@ -20,12 +20,73 @@ Spec::Matchers.define :have_apache_directive do |directive, value|
     end
   end
   
-  failure_message_for_should_not do |actual|
-    "expected that #{actual} would not be a precise multiple of #{expected}"
+  description do
+    "should have Apache #{directive} with value of #{value}"
+  end
+end
+
+Spec::Matchers.define :use_recipe do |expected|
+  match do |manifest|
+    recipes = manifest.recipes.map(&:first)
+    recipes.include?(expected)
   end
 
   description do
-    "be a precise multiple of #{expected}"
+    "should use #{expected} recipe"
   end
-  
+end
+
+Spec::Matchers.define :have_package do |expected|
+  match do |manifest|
+    !manifest.packages[expected].nil?
+  end
+end
+
+Spec::Matchers.define :have_service do |expected|
+  match do |manifest|
+    !manifest.services[expected].nil?
+  end
+end
+
+Spec::Matchers.define :have_file do |expected|
+  match do |manifest|
+    @file = manifest.files[expected]
+    result = !@file.nil?
+    if @str_or_regex
+      @str_or_regex_matched = @file.content.match(@str_or_regex)
+      result &&= @file.content && @str_or_regex_matched
+    elsif @symlink_target
+      @symlinked_to_target = @file.ensure == @symlink_target
+      result &&= @symlinked_to_target
+    end
+    result
+  end
+
+  def with_content(str_or_regex)
+    @str_or_regex = str_or_regex
+    self
+  end
+
+  def symlinked_to(file)
+    @symlink_target = file
+    self
+  end
+
+  failure_message_for_should do |actual|
+    if @str_or_regex
+      if !@str_or_regex_matched
+        "expected to #{expected} to match #{@str_or_regex.inspect}, but it did not match. Contains:\n#{@file.content}"
+      else
+        "expected to #{expected} to match #{@str_or_regex.inspect}, but it didn't exist"
+      end
+    elsif @symlink_target
+      if !@symlinked_to_target
+        "expected to #{expected} to be symlinked to #{@symlink_target}, but was not"
+      else
+        "expected to #{expected} to be symlinked to #{@symlink_target}, but it didn't exist"
+      end
+    else
+      "expected to #{expected} to match #{@str_or_regex.inspect}, but it didn't exist"
+    end
+  end
 end

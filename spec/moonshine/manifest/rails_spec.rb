@@ -15,50 +15,65 @@ module Gem  #:nodoc:
   end
 end
 
-class Moonshine::Manifest::RailsTest < Test::Unit::TestCase
+describe Moonshine::Manifest::Rails do
 
-  def setup
-    @manifest = Moonshine::Manifest::Rails.new
+  before do
+    @manifest = subject
   end
 
-  def test_default_stack
-    @manifest.expects(:database_environment).at_least_once.returns({:adapter => 'mysql'})
+  it { should be_executable }
 
-    @manifest.default_stack
+  context "default_stack" do
+    it "should support mysql" do
+      @manifest.expects(:database_environment).at_least_once.returns({:adapter => 'mysql'})
 
-    assert @manifest.recipes.map(&:first).include?(:apache_server), 'apache_server'
-    [:passenger_gem, :passenger_configure_gem_path, :passenger_apache_module, :passenger_site].each do |passenger_stack|
-      assert @manifest.recipes.map(&:first).include?(passenger_stack), passenger_stack.to_s
+      @manifest.default_stack
+
+      @manifest.should use_recipe(:apache_server)
+      @manifest.should use_recipe(:passenger_gem)
+      @manifest.should use_recipe(:passenger_configure_gem_path)
+      @manifest.should use_recipe(:passenger_apache_module)
+      @manifest.should use_recipe(:passenger_site)
+
+      @manifest.should use_recipe(:mysql_server)
+      @manifest.should use_recipe(:mysql_gem)
+      @manifest.should use_recipe(:mysql_database)
+      @manifest.should use_recipe(:mysql_user)
+      @manifest.should use_recipe(:mysql_fixup_debian_start)
+
+      @manifest.should use_recipe(:rails_rake_environment)
+      @manifest.should use_recipe(:rails_gems)
+      @manifest.should use_recipe(:rails_directories)
+      @manifest.should use_recipe(:rails_bootstrap)
+      @manifest.should use_recipe(:rails_migrations)
+      @manifest.should use_recipe(:rails_logrotate)
+
+      @manifest.should use_recipe(:ntp)
+      @manifest.should use_recipe(:time_zone)
+      @manifest.should use_recipe(:postfix)
+      @manifest.should use_recipe(:cron_packages)
+      @manifest.should use_recipe(:motd)
+      @manifest.should use_recipe(:security_updates)
+
     end
 
-    [:mysql_server, :mysql_gem, :mysql_database, :mysql_user, :mysql_fixup_debian_start].each do |mysql_stack|
-      assert @manifest.recipes.map(&:first).include?(mysql_stack), mysql_stack.to_s
+    def test_default_stack_with_postgresql
+      @manifest.expects(:database_environment).at_least_once.returns({:adapter => 'postgresql' })
+
+      @manifest.default_stack
+
+      [:postgresql_server, :postgresql_gem, :postgresql_user, :postgresql_database].each do |pgsql_stack|
+        assert @manifest.recipes.map(&:first).include?(pgsql_stack), pgsql_stack.to_s
+      end
     end
-    [:rails_rake_environment, :rails_gems, :rails_directories, :rails_bootstrap, :rails_migrations, :rails_logrotate].each do |rails_stack|
-      assert @manifest.recipes.map(&:first).include?(rails_stack), rails_stack.to_s
+
+    def test_default_stack_with_sqlite
+      @manifest.expects(:database_environment).at_least_once.returns({:adapter => 'sqlite' })
+
+      @manifest.default_stack
+
+      assert @manifest.recipes.map(&:first).include?(:sqlite3), 'sqlite3'
     end
-
-    [:ntp, :time_zone, :postfix, :cron_packages, :motd, :security_updates].each do |os_stack|
-      assert @manifest.recipes.map(&:first).include?(os_stack), os_stack.to_s
-    end
-  end
-  
-  def test_default_stack_with_postgresql
-    @manifest.expects(:database_environment).at_least_once.returns({:adapter => 'postgresql' })
-
-    @manifest.default_stack
-
-    [:postgresql_server, :postgresql_gem, :postgresql_user, :postgresql_database].each do |pgsql_stack|
-      assert @manifest.recipes.map(&:first).include?(pgsql_stack), pgsql_stack.to_s
-    end
-  end
-
-  def test_default_stack_with_sqlite
-    @manifest.expects(:database_environment).at_least_once.returns({:adapter => 'sqlite' })
-
-    @manifest.default_stack
-
-    assert @manifest.recipes.map(&:first).include?(:sqlite3), 'sqlite3'
   end
 
   def test_automatic_security_updates
@@ -75,39 +90,39 @@ class Moonshine::Manifest::RailsTest < Test::Unit::TestCase
     assert_match /"foo";/, @manifest.files["/etc/apt/apt.conf.d/50unattended-upgrades"].params[:content].value
   end
 
-  def test_is_executable
-    assert @manifest.executable?
-  end
-
-  def test_sets_up_gem_sources
-    @manifest.rails_gems
-    assert_match /gems.github.com/, @manifest.files["/etc/gemrc"].content
-  end
-
-  def test_loads_gems_from_config_hash
-    @manifest.configure(:gems => [ { :name => 'jnewland-pulse', :source => 'http://gems.github.com' } ])
-    @manifest.rails_gems
-    assert_not_nil Moonshine::Manifest::Rails.configuration[:gems]
-    Moonshine::Manifest::Rails.configuration[:gems].each do |gem|
-      assert_not_nil gem_resource = @manifest.packages[gem[:name]]
-      assert_equal :gem, gem_resource.provider
+  describe "#rails_gems" do
+    it "configures gem sources" do
+      @manifest.rails_gems
+      assert_match /gems.github.com/, @manifest.files["/etc/gemrc"].content
     end
-    assert_nil @manifest.packages['jnewland-pulse'].source
+
+    it "loads gems from config" do
+      @manifest.configure(:gems => [ { :name => 'jnewland-pulse', :source => 'http://gems.github.com' } ])
+      @manifest.rails_gems
+      assert_not_nil Moonshine::Manifest::Rails.configuration[:gems]
+      Moonshine::Manifest::Rails.configuration[:gems].each do |gem|
+        assert_not_nil gem_resource = @manifest.packages[gem[:name]]
+        assert_equal :gem, gem_resource.provider
+      end
+      assert_nil @manifest.packages['jnewland-pulse'].source
+
+    end
+
+    it "magically loads gem dependencies" do
+      @manifest.configure(:gems => [
+        { :name => 'webrat' },
+        { :name => 'thoughtbot-paperclip', :source => 'http://gems.github.com' }
+      ])
+      @manifest.rails_gems
+      assert_not_nil @manifest.packages['webrat']
+      assert_not_nil @manifest.packages['thoughtbot-paperclip']
+      assert_not_nil @manifest.packages['libxml2-dev']
+      assert_not_nil @manifest.packages['imagemagick']
+    end
+
   end
 
-  def test_magically_loads_gem_dependencies
-    @manifest.configure(:gems => [
-      { :name => 'webrat' },
-      { :name => 'thoughtbot-paperclip', :source => 'http://gems.github.com' }
-    ])
-    @manifest.rails_gems
-    assert_not_nil @manifest.packages['webrat']
-    assert_not_nil @manifest.packages['thoughtbot-paperclip']
-    assert_not_nil @manifest.packages['libxml2-dev']
-    assert_not_nil @manifest.packages['imagemagick']
-  end
-
-  def test_creates_directories
+  it "cretes directories" do
     config = {
       :application => 'foo',
       :user => 'foo',
@@ -123,233 +138,245 @@ class Moonshine::Manifest::RailsTest < Test::Unit::TestCase
     assert_equal 'foo', shared_dir.group
   end
 
-  def test_installs_passenger_gem
-    @manifest.configure(:passenger => { :version => nil })
+  describe "passenger" do
+    def test_installs_passenger_gem
+      @manifest.configure(:passenger => { :version => nil })
 
-    @manifest.passenger_configure_gem_path
-    @manifest.passenger_gem
+      @manifest.passenger_configure_gem_path
+      @manifest.passenger_gem
 
-    assert_not_nil @manifest.packages["passenger"]
-    assert_equal :latest, @manifest.packages["passenger"].ensure
-  end
+      assert_not_nil @manifest.packages["passenger"]
+      assert_equal :latest, @manifest.packages["passenger"].ensure
+      end
 
-  def test_can_pin_passenger_to_a_specific_version
-    @manifest.configure(:passenger => { :version => '2.2.2' })
-    @manifest.passenger_configure_gem_path
-    @manifest.passenger_gem
-    assert_not_nil @manifest.packages["passenger"]
-    assert_equal '2.2.2', @manifest.packages["passenger"].ensure
-  end
+    def test_can_pin_passenger_to_a_specific_version
+      @manifest.configure(:passenger => { :version => '2.2.2' })
+      @manifest.passenger_configure_gem_path
+      @manifest.passenger_gem
+      assert_not_nil @manifest.packages["passenger"]
+      assert_equal '2.2.2', @manifest.packages["passenger"].ensure
+      end
 
-  def test_installs_passenger_module
-    @manifest.passenger_configure_gem_path
-    @manifest.passenger_apache_module
+    def test_installs_passenger_module
+      @manifest.passenger_configure_gem_path
+      @manifest.passenger_apache_module
 
-    assert_not_nil @manifest.packages['apache2-threaded-dev']
-    assert_not_nil @manifest.files['/etc/apache2/mods-available/passenger.load']
-    assert_not_nil @manifest.files['/etc/apache2/mods-available/passenger.conf']
-    assert_match /PassengerUseGlobalQueue On/, @manifest.files['/etc/apache2/mods-available/passenger.conf'].content
-    assert_not_nil @manifest.execs.find { |n, r| r.command == '/usr/sbin/a2enmod passenger' }
-    assert_not_nil @manifest.execs.find { |n, r| r.command == '/usr/bin/ruby -S rake clean apache2' }
-  end
+      assert_not_nil @manifest.packages['apache2-threaded-dev']
+      assert_not_nil @manifest.files['/etc/apache2/mods-available/passenger.load']
+      assert_not_nil @manifest.files['/etc/apache2/mods-available/passenger.conf']
+      assert_match /PassengerUseGlobalQueue On/, @manifest.files['/etc/apache2/mods-available/passenger.conf'].content
+      assert_not_nil @manifest.execs.find { |n, r| r.command == '/usr/sbin/a2enmod passenger' }
+      assert_not_nil @manifest.execs.find { |n, r| r.command == '/usr/bin/ruby -S rake clean apache2' }
+    end
 
-  def test_setting_passenger_booleans_to_false
-    @manifest.configure(:passenger => { :use_global_queue => false })
-    @manifest.passenger_configure_gem_path
-    @manifest.passenger_apache_module
-    assert_match /PassengerUseGlobalQueue Off/, @manifest.files['/etc/apache2/mods-available/passenger.conf'].content
-  end
+    def test_setting_passenger_booleans_to_false
+      @manifest.configure(:passenger => { :use_global_queue => false })
+      @manifest.passenger_configure_gem_path
+      @manifest.passenger_apache_module
+      assert_match /PassengerUseGlobalQueue Off/, @manifest.files['/etc/apache2/mods-available/passenger.conf'].content
+    end
 
-  def test_configures_passenger_vhost
-    @manifest.passenger_configure_gem_path
-    @manifest.passenger_site
 
-    assert_not_nil @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"]
-    assert_match /RailsAllowModRewrite On/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-    assert_not_nil @manifest.execs.find { |n, r| r.command == '/usr/sbin/a2dissite 000-default' }
-    assert_not_nil @manifest.execs.find { |n, r| r.command == "/usr/sbin/a2ensite #{@manifest.configuration[:application]}" }
-  end
+    describe "passenger_site" do
+      def test_configures_passenger_vhost
+        @manifest.passenger_configure_gem_path
+        @manifest.passenger_site
 
-  def test_passenger_vhost_configuration
-    @manifest.passenger_configure_gem_path
-    @manifest.configure(:passenger => { :rails_base_uri => '/test' })
+        assert_not_nil @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"]
+        assert_match /RailsAllowModRewrite On/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
+        assert_not_nil @manifest.execs.find { |n, r| r.command == '/usr/sbin/a2dissite 000-default' }
+        assert_not_nil @manifest.execs.find { |n, r| r.command == "/usr/sbin/a2ensite #{@manifest.configuration[:application]}" }
+      end
 
-    @manifest.passenger_site
+      def test_passenger_vhost_configuration
+        @manifest.passenger_configure_gem_path
+        @manifest.configure(:passenger => { :rails_base_uri => '/test' })
 
-    assert_match /RailsBaseURI \/test/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-  end
+        @manifest.passenger_site
 
-  def test_ssl_vhost_configuration
-    @manifest.passenger_configure_gem_path
-    @manifest.configure(:ssl => {
-      :certificate_file => 'cert_file',
-      :certificate_key_file => 'cert_key_file',
-      :certificate_chain_file => 'cert_chain_file'
-    })
+        assert_match /RailsBaseURI \/test/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
+      end
 
-    @manifest.passenger_site
+    end
 
-    assert_match /SSLEngine on/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-    assert_match /https/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
+    def test_ssl_vhost_configuration
+      @manifest.passenger_configure_gem_path
+      @manifest.configure(:ssl => {
+        :certificate_file => 'cert_file',
+        :certificate_key_file => 'cert_key_file',
+        :certificate_chain_file => 'cert_chain_file'
+      })
+
+      @manifest.passenger_site
+
+      assert_match /SSLEngine on/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
+      assert_match /https/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
+    end
+    def test_vhost_basic_auth_configuration
+      @manifest.passenger_configure_gem_path
+      @manifest.configure(:apache => {
+        :users => {
+        :jimbo  => 'motorcycle',
+        :joebob => 'jimbo'
+      }
+      })
+
+      @manifest.passenger_site
+
+      assert_match /<Location \/ >/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
+      assert_match /authuserfile #{@manifest.configuration[:deploy_to]}\/shared\/config\/htpasswd/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
+      assert_match /require valid-user/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
+    end
+
+    def test_vhost_allow_configuration
+      @manifest.passenger_configure_gem_path
+      @manifest.configure(:apache => {
+        :users => {},
+        :deny  => {},
+        :allow => ['192.168.1','env=safari_user']
+      })
+
+      @manifest.passenger_site
+
+      vhost = @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
+      assert_match /<Location \/ >/, vhost
+      assert_match /allow from 192.168.1/, vhost
+      assert_match /allow from env=safari_user/, vhost
+    end
+
+    def test_vhost_deny_configuration
+      @manifest.passenger_configure_gem_path
+      @manifest.configure(:apache => {
+        :users => {},
+        :allow => {},
+        :deny => ['192.168.1','env=safari_user']
+      })
+
+      @manifest.passenger_site
+
+      assert_match /<Location \/ >/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
+      assert_match /deny from 192.168.1/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
+    end
+
   end
   
-  def test_htpasswd_generation
-    @manifest.passenger_configure_gem_path
-    @manifest.configure(:apache => {
-      :users => {
-        :jimbo  => 'motorcycle',
-        :joebob => 'jimbo'
-      }
-    })
-    @manifest.apache_server
-    
-    assert_not_nil @manifest.execs.find { |n, r| r.command == 'htpasswd -b /srv/foo/shared/config/htpasswd jimbo motorcycle' }
-    assert_not_nil @manifest.execs.find { |n, r| r.command == 'htpasswd -b /srv/foo/shared/config/htpasswd joebob jimbo' }
-    assert_not_nil @manifest.files["#{@manifest.configuration[:deploy_to]}/shared/config/htpasswd"]
+  describe "apache server" do
+    it "generates htpasswd" do
+      @manifest.passenger_configure_gem_path
+      @manifest.configure(:apache => {
+        :users => {
+          :jimbo  => 'motorcycle',
+          :joebob => 'jimbo'
+        }
+      })
+      @manifest.apache_server
+      
+      assert_not_nil @manifest.execs.find { |n, r| r.command == 'htpasswd -b /srv/foo/shared/config/htpasswd jimbo motorcycle' }
+      assert_not_nil @manifest.execs.find { |n, r| r.command == 'htpasswd -b /srv/foo/shared/config/htpasswd joebob jimbo' }
+      @manifest.should have_file("#{@manifest.configuration[:deploy_to]}/shared/config/htpasswd")
+    end
   end
 
-  def test_vhost_basic_auth_configuration
-    @manifest.passenger_configure_gem_path
-    @manifest.configure(:apache => {
-      :users => {
-        :jimbo  => 'motorcycle',
-        :joebob => 'jimbo'
-      }
-    })
-
-    @manifest.passenger_site
-
-    assert_match /<Location \/ >/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-    assert_match /authuserfile #{@manifest.configuration[:deploy_to]}\/shared\/config\/htpasswd/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-    assert_match /require valid-user/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-  end
- 
-  def test_vhost_allow_configuration
-    @manifest.passenger_configure_gem_path
-    @manifest.configure(:apache => {
-      :users => {},
-      :deny  => {},
-      :allow => ['192.168.1','env=safari_user']
-    })
-
-    @manifest.passenger_site
-
-    vhost = @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-    assert_match /<Location \/ >/, vhost
-    assert_match /allow from 192.168.1/, vhost
-    assert_match /allow from env=safari_user/, vhost
-  end
-
-  def test_vhost_deny_configuration
-    @manifest.passenger_configure_gem_path
-    @manifest.configure(:apache => {
-      :users => {},
-      :allow => {},
-      :deny => ['192.168.1','env=safari_user']
-    })
-
-    @manifest.passenger_site
-    
-    assert_match /<Location \/ >/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-    assert_match /deny from 192.168.1/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-  end
 
   def test_installs_postfix
     @manifest.postfix
 
-    assert_not_nil @manifest.packages["postfix"]
+    @manifest.should have_package("postfix")
   end
 
   def test_installs_ntp
     @manifest.ntp
 
-    assert_not_nil @manifest.services["ntp"]
-    assert_not_nil @manifest.packages["ntp"]
+    @manifest.should have_service("ntp")
+    @manifest.should have_package("ntp")
   end
 
   def test_installs_cron
     @manifest.cron_packages
 
-    assert_not_nil @manifest.services["cron"]
-    assert_not_nil @manifest.packages["cron"]
+    @manifest.should have_service("cron")
+    @manifest.should have_package("cron")
   end
 
-  def test_sets_default_time_zone
-    @manifest.time_zone
+  describe "#time_zone" do
+    it "sets default time zone" do
+      #pending "seemed to not being run previously, due to being overridden"
+      @manifest.time_zone
 
-    assert_not_nil @manifest.files["/etc/timezone"]
-    assert_not_nil @manifest.packages["/etc/localtime"]
-    assert_equal '/usr/share/zoneinfo/UTC', @manifest.files["/etc/localtime"].ensure
-    assert_equal "UTC\n", @manifest.files["/etc/timezone"].content
+      @manifest.should have_file("/etc/timezone").with_content("UTC\n")
+      @manifest.should have_file("/etc/localtime").symlinked_to('/usr/share/zoneinfo/UTC')
+    end
+
+    it "sets default timezone" do
+      @manifest.configure(:time_zone => nil)
+
+      @manifest.time_zone
+
+      @manifest.should have_file("/etc/timezone").with_content("UTC\n")
+      @manifest.should have_file("/etc/localtime").symlinked_to('/usr/share/zoneinfo/UTC')
+    end
+
+    it "sets configured time zone" do
+      @manifest.configure(:time_zone => 'America/New_York')
+
+      @manifest.time_zone
+
+      @manifest.should have_file("/etc/timezone").with_content("America/New_York\n")
+      @manifest.should have_file("/etc/localtime").symlinked_to('/usr/share/zoneinfo/America/New_York')
+    end
   end
 
-  def test_sets_default_time_zone
-    @manifest.configure(:time_zone => nil)
+  describe "#log_rotate" do
+    it "generates configuration files" do
+      @manifest.send(:logrotate, '/srv/theapp/shared/logs/*.log', {:options => %w(daily missingok compress delaycompress sharedscripts), :postrotate => 'touch /home/deploy/app/current/tmp/restart.txt'})
+      @manifest.send(:logrotate, '/srv/otherapp/shared/logs/*.log', {:options => %w(daily missingok nocompress delaycompress sharedscripts), :postrotate => 'touch /home/deploy/app/current/tmp/restart.txt'})
 
-    @manifest.time_zone
+      @manifest.should have_package("logrotate")
 
-    assert_not_nil @manifest.files["/etc/timezone"]
-    assert_equal "UTC\n", @manifest.files["/etc/timezone"].content
-    assert_not_nil @manifest.files["/etc/localtime"]
-    assert_equal '/usr/share/zoneinfo/UTC', @manifest.files["/etc/localtime"].ensure
-  end
+      @manifest.should have_file("/etc/logrotate.d/srvtheappsharedlogslog.conf").with_content(/compress/)
+      @manifest.should have_file("/etc/logrotate.d/srvotherappsharedlogslog.conf").with_content(/nocompress/)
+    end
 
-  def test_sets_configured_time_zone
-    @manifest.configure(:time_zone => 'America/New_York')
+    it "is configurable" do
+      @manifest.configure(
+        :deploy_to => '/srv/foo',
+        :rails_logrotate => {
+          :options => %w(foo bar baz),
+          :postrotate => 'do something'
+        }
+      )
 
-    @manifest.time_zone
+      @manifest.send(:rails_logrotate)
 
-    assert_not_nil @manifest.files["/etc/timezone"]
-    assert_equal "America/New_York\n", @manifest.files["/etc/timezone"].content
-    assert_not_nil @manifest.files["/etc/localtime"]
-    assert_equal '/usr/share/zoneinfo/America/New_York', @manifest.files["/etc/localtime"].ensure
-  end
+      @manifest.should have_package("logrotate")
+      @manifest.should have_file("/etc/logrotate.d/srvfoosharedloglog.conf")
+      
+      logrotate_conf = @manifest.files["/etc/logrotate.d/srvfoosharedloglog.conf"].content
 
-  def test_logroate_helper_generates_config
-    @manifest.send(:logrotate, '/srv/theapp/shared/logs/*.log', {:options => %w(daily missingok compress delaycompress sharedscripts), :postrotate => 'touch /home/deploy/app/current/tmp/restart.txt'})
-    @manifest.send(:logrotate, '/srv/otherapp/shared/logs/*.log', {:options => %w(daily missingok nocompress delaycompress sharedscripts), :postrotate => 'touch /home/deploy/app/current/tmp/restart.txt'})
-
-    assert_not_nil @manifest.packages["logrotate"]
-    assert_match /compress/, @manifest.files["/etc/logrotate.d/srvtheappsharedlogslog.conf"].content
-    assert_match /nocompress/, @manifest.files["/etc/logrotate.d/srvotherappsharedlogslog.conf"].content
-  end
-
-  def test_rails_logroate_is_configurable
-    @manifest.configure(
-      :deploy_to => '/srv/foo',
-      :rails_logrotate => {
-        :options => %w(foo bar baz),
-        :postrotate => 'do something'
-      }
-    )
-
-    @manifest.send(:rails_logrotate)
-
-    assert_not_nil @manifest.packages["logrotate"]
-    assert_match /foo/, @manifest.files["/etc/logrotate.d/srvfoosharedloglog.conf"].content
-    assert_no_match /compress/, @manifest.files["/etc/logrotate.d/srvfoosharedloglog.conf"].content
-    assert_match /do something/, @manifest.files["/etc/logrotate.d/srvfoosharedloglog.conf"].content
-    assert_no_match /restart\.txt/, @manifest.files["/etc/logrotate.d/srvfoosharedloglog.conf"].content
+      logrotate_conf.should match(/foo/)
+      logrotate_conf.should_not match(/compress/)
+      logrotate_conf.should_not match(/restart\.txt/)
+    end
   end
 
   def test_postgresql_server
     @manifest.postgresql_server
 
-    assert_not_nil @manifest.services["postgresql-8.3"]
-    assert_not_nil @manifest.packages["postgresql-client"]
-    assert_not_nil @manifest.packages["postgresql-contrib"]
-    assert_not_nil @manifest.files["/etc/postgresql/8.3/main/pg_hba.conf"]
-    assert_not_nil @manifest.files["/etc/postgresql/8.3/main/postgresql.conf"]
+    @manifest.should have_service("postgresql-8.3")
+    @manifest.should have_package("postgresql-client")
+    @manifest.should have_package("postgresql-contrib")
+    @manifest.should have_file("/etc/postgresql/8.3/main/pg_hba.conf")
+    @manifest.should have_file("/etc/postgresql/8.3/main/postgresql.conf")
   end
 
   def test_postgresql_gem
     @manifest.postgresql_gem
 
-    assert_not_nil @manifest.packages["postgres"]
-    assert_not_nil @manifest.packages["pg"]
-    assert_not_nil @manifest.packages["postgresql-client"]
-    assert_not_nil @manifest.packages["postgresql-contrib"]
-    assert_not_nil @manifest.packages["libpq-dev"]
+    @manifest.should have_package("postgres")
+    @manifest.should have_package("pg")
+    @manifest.should have_package("postgresql-client")
+    @manifest.should have_package("postgresql-contrib")
+    @manifest.should have_package("libpq-dev")
   end
 
   def test_postgresql_database_and_user
