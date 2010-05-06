@@ -1,4 +1,4 @@
-require 'test_helper'
+require 'spec_helper'
 
 class MoonshineGeneratorTest < Test::Unit::TestCase
   if Rails::VERSION::MAJOR < 3

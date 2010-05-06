@@ -1,4 +1,4 @@
-require 'test_helper'
+require 'spec_helper'
 
 # mock out the gem source index to fake like passenger is installed, but
 # nothing else

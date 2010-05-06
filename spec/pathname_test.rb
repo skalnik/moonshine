@@ -1,4 +1,4 @@
-require 'test_helper'
+require 'spec_helper'
 
 class TestPathname < Test::Unit::TestCase
   def test_match
