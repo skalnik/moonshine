@@ -38,13 +38,48 @@ end
 
 Spec::Matchers.define :have_package do |expected|
   match do |manifest|
-    !manifest.packages[expected].nil?
+    package = manifest.packages[expected]
+    result = !package.nil?
+    if @version
+      result &&= package.ensure == @version
+    end
+    if @provider
+      result &&= package.provider == @provider.to_sym
+    end
+    result
   end
+
+  def version(version)
+    @version = version
+    self
+  end
+
+  def from_provider(provider)
+    @provider = provider
+    self
+  end
+
+  failure_message_for_should do |actual|
+    "expected manifest to have package #{expected}, but did not"
+  end
+
+  failure_message_for_should_not do |actual|
+    "expected manifest to not have package #{expected}, but did"
+  end
+  
 end
 
 Spec::Matchers.define :have_service do |expected|
   match do |manifest|
     !manifest.services[expected].nil?
+  end
+
+  failure_message_for_should do |actual|
+    "expected manifest to have #{expected}, but did not"
+  end
+  
+  failure_message_for_should_not do |actual|
+    "expected manifest to not have #{expected}, but did"
   end
 end
 
@@ -89,4 +124,13 @@ Spec::Matchers.define :have_file do |expected|
       "expected to #{expected} to match #{@str_or_regex.inspect}, but it didn't exist"
     end
   end
+end
+
+Spec::Matchers.define :exec_command do |command|
+  match do |manifest|
+    manifest.execs.find do |name, exec|
+      exec.command == command
+    end
+  end
+  
 end

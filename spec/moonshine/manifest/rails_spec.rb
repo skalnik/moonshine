@@ -24,7 +24,7 @@ describe Moonshine::Manifest::Rails do
   it { should be_executable }
 
   context "default_stack" do
-    it "should support mysql" do
+    it "supports mysql" do
       @manifest.expects(:database_environment).at_least_once.returns({:adapter => 'mysql'})
 
       @manifest.default_stack
@@ -57,55 +57,63 @@ describe Moonshine::Manifest::Rails do
 
     end
 
-    def test_default_stack_with_postgresql
+    it "supports postgresl" do 
       @manifest.expects(:database_environment).at_least_once.returns({:adapter => 'postgresql' })
 
       @manifest.default_stack
 
-      [:postgresql_server, :postgresql_gem, :postgresql_user, :postgresql_database].each do |pgsql_stack|
-        assert @manifest.recipes.map(&:first).include?(pgsql_stack), pgsql_stack.to_s
-      end
+      @manifest.should use_recipe(:postgresql_server)
+      @manifest.should use_recipe(:postgresql_gem)
+      @manifest.should use_recipe(:postgresql_user)
+      @manifest.should use_recipe(:postgresql_database)
     end
 
-    def test_default_stack_with_sqlite
+    it "supports sqlite3" do
       @manifest.expects(:database_environment).at_least_once.returns({:adapter => 'sqlite' })
 
       @manifest.default_stack
 
-      assert @manifest.recipes.map(&:first).include?(:sqlite3), 'sqlite3'
+      @manifest.should use_recipe(:sqlite3)
     end
   end
 
-  def test_automatic_security_updates
+  specify "#security_update" do
     @manifest.configure(:unattended_upgrade => { :package_blacklist => ['foo', 'bar', 'widget']})
     @manifest.configure(:user => 'rails')
 
     @manifest.security_updates
 
-    assert_not_nil @manifest.packages["unattended-upgrades"]
-    assert_not_nil @manifest.files["/etc/apt/apt.conf.d/10periodic"]
-    assert_not_nil @manifest.files["/etc/apt/apt.conf.d/50unattended-upgrades"]
-    assert_match /APT::Periodic::Unattended-Upgrade "1"/, @manifest.files["/etc/apt/apt.conf.d/10periodic"].params[:content].value
-    assert_match /Unattended-Upgrade::Mail "rails@localhost";/, @manifest.files["/etc/apt/apt.conf.d/50unattended-upgrades"].params[:content].value
-    assert_match /"foo";/, @manifest.files["/etc/apt/apt.conf.d/50unattended-upgrades"].params[:content].value
+    @manifest.should have_package("unattended-upgrades")
+    @manifest.should have_file("/etc/apt/apt.conf.d/10periodic").with_content(
+      /APT::Periodic::Unattended-Upgrade "1"/
+    )
+    @manifest.should have_file("/etc/apt/apt.conf.d/50unattended-upgrades").with_content(
+      /Unattended-Upgrade::Mail "rails@localhost";/
+    )
+    @manifest.should have_file("/etc/apt/apt.conf.d/50unattended-upgrades").with_content(
+      /"foo";/
+    )
   end
 
   describe "#rails_gems" do
     it "configures gem sources" do
       @manifest.rails_gems
-      assert_match /gems.github.com/, @manifest.files["/etc/gemrc"].content
+
+      @manifest.should have_file('/etc/gemrc').with_content(
+        /gems.github.com/
+      )
     end
 
     it "loads gems from config" do
       @manifest.configure(:gems => [ { :name => 'jnewland-pulse', :source => 'http://gems.github.com' } ])
       @manifest.rails_gems
-      assert_not_nil Moonshine::Manifest::Rails.configuration[:gems]
-      Moonshine::Manifest::Rails.configuration[:gems].each do |gem|
-        assert_not_nil gem_resource = @manifest.packages[gem[:name]]
-        assert_equal :gem, gem_resource.provider
-      end
-      assert_nil @manifest.packages['jnewland-pulse'].source
 
+      Moonshine::Manifest::Rails.configuration[:gems].should_not be_nil
+
+      Moonshine::Manifest::Rails.configuration[:gems].each do |gem|
+        @manifest.should have_package(gem[:name]).from_provider(:gem)
+      end
+      @manifest.packages['jnewland-pulse'].source.should be_nil
     end
 
     it "magically loads gem dependencies" do
@@ -113,11 +121,13 @@ describe Moonshine::Manifest::Rails do
         { :name => 'webrat' },
         { :name => 'thoughtbot-paperclip', :source => 'http://gems.github.com' }
       ])
+
       @manifest.rails_gems
-      assert_not_nil @manifest.packages['webrat']
-      assert_not_nil @manifest.packages['thoughtbot-paperclip']
-      assert_not_nil @manifest.packages['libxml2-dev']
-      assert_not_nil @manifest.packages['imagemagick']
+
+      @manifest.should have_package('webrat')
+      @manifest.should have_package('thoughtbot-paperclip')
+      @manifest.should have_package('libxml2-dev')
+      @manifest.should have_package('imagemagick')
     end
 
   end
@@ -132,130 +142,160 @@ describe Moonshine::Manifest::Rails do
 
     @manifest.rails_directories
 
-    assert_not_nil shared_dir = @manifest.files["/srv/foo/shared"]
-    assert_equal :directory, shared_dir.ensure
-    assert_equal 'foo', shared_dir.owner
-    assert_equal 'foo', shared_dir.group
+
+    shared_dir = @manifest.files["/srv/foo/shared"]
+    shared_dir.should_not be_nil
+    shared_dir.ensure.should == :directory
+    shared_dir.owner.should == 'foo'
+    shared_dir.group.should == 'foo'
   end
 
-  describe "passenger" do
-    def test_installs_passenger_gem
+  describe "passenger support" do
+    it "installs gem" do
       @manifest.configure(:passenger => { :version => nil })
 
       @manifest.passenger_configure_gem_path
       @manifest.passenger_gem
 
-      assert_not_nil @manifest.packages["passenger"]
-      assert_equal :latest, @manifest.packages["passenger"].ensure
-      end
+      @manifest.should have_package('passenger').version(:latest)
+    end
 
-    def test_can_pin_passenger_to_a_specific_version
+    it "can be pinned to a specific version" do
       @manifest.configure(:passenger => { :version => '2.2.2' })
       @manifest.passenger_configure_gem_path
       @manifest.passenger_gem
-      assert_not_nil @manifest.packages["passenger"]
-      assert_equal '2.2.2', @manifest.packages["passenger"].ensure
-      end
 
-    def test_installs_passenger_module
+      @manifest.should have_package('passenger').version('2.2.2')
+    end
+
+    it "installs passenger apache module" do
       @manifest.passenger_configure_gem_path
       @manifest.passenger_apache_module
 
-      assert_not_nil @manifest.packages['apache2-threaded-dev']
-      assert_not_nil @manifest.files['/etc/apache2/mods-available/passenger.load']
-      assert_not_nil @manifest.files['/etc/apache2/mods-available/passenger.conf']
-      assert_match /PassengerUseGlobalQueue On/, @manifest.files['/etc/apache2/mods-available/passenger.conf'].content
-      assert_not_nil @manifest.execs.find { |n, r| r.command == '/usr/sbin/a2enmod passenger' }
-      assert_not_nil @manifest.execs.find { |n, r| r.command == '/usr/bin/ruby -S rake clean apache2' }
+      @manifest.should have_package('apache2-threaded-dev')
+      @manifest.should have_file('/etc/apache2/mods-available/passenger.load')
+      @manifest.should have_file('/etc/apache2/mods-available/passenger.conf').with_content(
+        /PassengerUseGlobalQueue On/
+      )
+      @manifest.should exec_command('/usr/sbin/a2enmod passenger')
+      @manifest.should exec_command('/usr/bin/ruby -S rake clean apache2')
     end
 
-    def test_setting_passenger_booleans_to_false
+    it "allows setting booleans configurations to false" do
       @manifest.configure(:passenger => { :use_global_queue => false })
       @manifest.passenger_configure_gem_path
       @manifest.passenger_apache_module
-      assert_match /PassengerUseGlobalQueue Off/, @manifest.files['/etc/apache2/mods-available/passenger.conf'].content
+
+      @manifest.should have_file('/etc/apache2/mods-available/passenger.conf').with_content(
+        /PassengerUseGlobalQueue Off/
+      )
     end
 
 
     describe "passenger_site" do
-      def test_configures_passenger_vhost
+      it "enables passenger vhost, disables default vhost, and configures mod_rewrite" do
         @manifest.passenger_configure_gem_path
         @manifest.passenger_site
 
-        assert_not_nil @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"]
-        assert_match /RailsAllowModRewrite On/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-        assert_not_nil @manifest.execs.find { |n, r| r.command == '/usr/sbin/a2dissite 000-default' }
-        assert_not_nil @manifest.execs.find { |n, r| r.command == "/usr/sbin/a2ensite #{@manifest.configuration[:application]}" }
+        vhost_conf_path = "/etc/apache2/sites-available/#{@manifest.configuration[:application]}"
+        @manifest.should have_file(vhost_conf_path).with_content(
+          /RailsAllowModRewrite On/
+        )
+
+        @manifest.should exec_command('/usr/sbin/a2dissite 000-default')
+        @manifest.should exec_command("/usr/sbin/a2ensite #{@manifest.configuration[:application]}")
       end
 
-      def test_passenger_vhost_configuration
+      it "supports configuring RailsBaseURI" do
         @manifest.passenger_configure_gem_path
         @manifest.configure(:passenger => { :rails_base_uri => '/test' })
 
         @manifest.passenger_site
 
-        assert_match /RailsBaseURI \/test/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
+        vhost_conf_path = "/etc/apache2/sites-available/#{@manifest.configuration[:application]}"
+        @manifest.should have_file(vhost_conf_path).with_content(
+          /RailsBaseURI \/test/
+        )
       end
 
-    end
+      it "supports configuring ssl" do
+        @manifest.passenger_configure_gem_path
+        @manifest.configure(:ssl => {
+          :certificate_file => 'cert_file',
+          :certificate_key_file => 'cert_key_file',
+          :certificate_chain_file => 'cert_chain_file'
+        })
 
-    def test_ssl_vhost_configuration
-      @manifest.passenger_configure_gem_path
-      @manifest.configure(:ssl => {
-        :certificate_file => 'cert_file',
-        :certificate_key_file => 'cert_key_file',
-        :certificate_chain_file => 'cert_chain_file'
-      })
+        @manifest.passenger_site
 
-      @manifest.passenger_site
+        @manifest.should have_file("/etc/apache2/sites-available/#{@manifest.configuration[:application]}").with_content(
+          /SSLEngine on/
+        )
+        @manifest.should have_file("/etc/apache2/sites-available/#{@manifest.configuration[:application]}").with_content(
+          /https/
+        )
+      end
 
-      assert_match /SSLEngine on/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-      assert_match /https/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-    end
-    def test_vhost_basic_auth_configuration
-      @manifest.passenger_configure_gem_path
-      @manifest.configure(:apache => {
-        :users => {
-        :jimbo  => 'motorcycle',
-        :joebob => 'jimbo'
-      }
-      })
+      it "supports basic auth" do
+        @manifest.passenger_configure_gem_path
+        @manifest.configure(:apache => {
+          :users => {
+          :jimbo  => 'motorcycle',
+          :joebob => 'jimbo'
+        }
+        })
 
-      @manifest.passenger_site
+        @manifest.passenger_site
 
-      assert_match /<Location \/ >/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-      assert_match /authuserfile #{@manifest.configuration[:deploy_to]}\/shared\/config\/htpasswd/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-      assert_match /require valid-user/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-    end
+        vhost_conf_path = "/etc/apache2/sites-available/#{@manifest.configuration[:application]}"
+        @manifest.should have_file(vhost_conf_path).with_content(
+          /<Location \/ >/
+        )
 
-    def test_vhost_allow_configuration
-      @manifest.passenger_configure_gem_path
-      @manifest.configure(:apache => {
-        :users => {},
-        :deny  => {},
-        :allow => ['192.168.1','env=safari_user']
-      })
+        @manifest.should have_file(vhost_conf_path).with_content(
+          /authuserfile #{@manifest.configuration[:deploy_to]}\/shared\/config\/htpasswd/
+        )
 
-      @manifest.passenger_site
+        @manifest.should have_file(vhost_conf_path).with_content(
+          /require valid-user/
+        )
+      end
 
-      vhost = @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-      assert_match /<Location \/ >/, vhost
-      assert_match /allow from 192.168.1/, vhost
-      assert_match /allow from env=safari_user/, vhost
-    end
+      it "supports allowing access" do
+        @manifest.passenger_configure_gem_path
+        @manifest.configure(:apache => {
+          :users => {},
+          :deny  => {},
+          :allow => ['192.168.1','env=safari_user']
+        })
 
-    def test_vhost_deny_configuration
-      @manifest.passenger_configure_gem_path
-      @manifest.configure(:apache => {
-        :users => {},
-        :allow => {},
-        :deny => ['192.168.1','env=safari_user']
-      })
+        @manifest.passenger_site
 
-      @manifest.passenger_site
+        vhost = @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
+        vhost.should match(/<Location \/ >/)
+        vhost.should match(/allow from 192.168.1/)
+        vhost.should match(/allow from env=safari_user/)
+      end
 
-      assert_match /<Location \/ >/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
-      assert_match /deny from 192.168.1/, @manifest.files["/etc/apache2/sites-available/#{@manifest.configuration[:application]}"].content
+      it "supports denying access" do
+        @manifest.passenger_configure_gem_path
+        @manifest.configure(:apache => {
+          :users => {},
+          :allow => {},
+          :deny => ['192.168.1','env=safari_user']
+        })
+
+        @manifest.passenger_site
+
+        vhost_conf_path = "/etc/apache2/sites-available/#{@manifest.configuration[:application]}"
+        @manifest.should have_file(vhost_conf_path).with_content(
+          /<Location \/ >/
+        )
+
+        @manifest.should have_file(vhost_conf_path).with_content(
+          /deny from 192.168.1/
+        )
+      end
     end
 
   end
@@ -271,27 +311,27 @@ describe Moonshine::Manifest::Rails do
       })
       @manifest.apache_server
       
-      assert_not_nil @manifest.execs.find { |n, r| r.command == 'htpasswd -b /srv/foo/shared/config/htpasswd jimbo motorcycle' }
-      assert_not_nil @manifest.execs.find { |n, r| r.command == 'htpasswd -b /srv/foo/shared/config/htpasswd joebob jimbo' }
+      @manifest.should exec_command('htpasswd -b /srv/foo/shared/config/htpasswd jimbo motorcycle')
+      @manifest.should exec_command('htpasswd -b /srv/foo/shared/config/htpasswd joebob jimbo')
       @manifest.should have_file("#{@manifest.configuration[:deploy_to]}/shared/config/htpasswd")
     end
   end
 
 
-  def test_installs_postfix
+  it "supports postfix" do
     @manifest.postfix
 
     @manifest.should have_package("postfix")
   end
 
-  def test_installs_ntp
+  it "supports ntp" do
     @manifest.ntp
 
     @manifest.should have_service("ntp")
     @manifest.should have_package("ntp")
   end
 
-  def test_installs_cron
+  it "supports cron" do
     @manifest.cron_packages
 
     @manifest.should have_service("cron")
@@ -300,7 +340,6 @@ describe Moonshine::Manifest::Rails do
 
   describe "#time_zone" do
     it "sets default time zone" do
-      #pending "seemed to not being run previously, due to being overridden"
       @manifest.time_zone
 
       @manifest.should have_file("/etc/timezone").with_content("UTC\n")
@@ -359,7 +398,7 @@ describe Moonshine::Manifest::Rails do
     end
   end
 
-  def test_postgresql_server
+  specify "#postgresql_server" do
     @manifest.postgresql_server
 
     @manifest.should have_service("postgresql-8.3")
@@ -369,7 +408,7 @@ describe Moonshine::Manifest::Rails do
     @manifest.should have_file("/etc/postgresql/8.3/main/postgresql.conf")
   end
 
-  def test_postgresql_gem
+  specify "#postgresql_gem" do
     @manifest.postgresql_gem
 
     @manifest.should have_package("postgres")
@@ -379,7 +418,7 @@ describe Moonshine::Manifest::Rails do
     @manifest.should have_package("libpq-dev")
   end
 
-  def test_postgresql_database_and_user
+  specify "#postgresql_database and #postgresql_user" do
     @manifest.expects(:database_environment).at_least_once.returns({
       :username => 'pg_username',
       :database => 'pg_database',
@@ -389,8 +428,8 @@ describe Moonshine::Manifest::Rails do
     @manifest.postgresql_user
     @manifest.postgresql_database
 
-    assert_not_nil @manifest.execs.find { |n, r| r.command == '/usr/bin/psql -c "CREATE USER pg_username WITH PASSWORD \'pg_password\'"' }
-    assert_not_nil @manifest.execs.find { |n, r| r.command == '/usr/bin/createdb -O pg_username pg_database' }
+    @manifest.should exec_command('/usr/bin/psql -c "CREATE USER pg_username WITH PASSWORD \'pg_password\'"')
+    @manifest.should exec_command('/usr/bin/createdb -O pg_username pg_database')
   end
 
 end
