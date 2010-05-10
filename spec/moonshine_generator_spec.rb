@@ -1,69 +1,66 @@
 require 'spec_helper'
 
-class MoonshineGeneratorTest < Test::Unit::TestCase
+describe MoonshineGenerator do
   if Rails::VERSION::MAJOR < 3
     require 'yaml'
 
-    def setup
+    before do
       FileUtils.mkdir_p(generator_rails_root)
 
-      @original_files = file_list
-
       Rails::Generator::Scripts::Generate.new.run(["moonshine"], :destination => generator_rails_root)
-      @new_files = (file_list - @original_files)
     end
 
-    def teardown
+    after do
       FileUtils.rm_r(generator_rails_root)
     end
 
-    def test_generates_correct_files
-      assert File.exist?(capfile_path)
-      assert File.exist?(manifest_path)
-      assert File.exist?(templates_path)
-      assert File.exist?(config_path)
-      assert File.exist?(gems_path)
-      assert File.exist?(deploy_path)
+    it "generates correct files" do
+      capfile_path.should exist
+      manifest_path.should exist
+      templates_path.should exist
+      config_path.should exist
+      gems_path.should exist
+      deploy_path.should exist
     end
 
-    def test_generates_valid_config_file
-      assert_instance_of Hash, configuration
+    it "generates valid config" do
+      configuration.should be_kind_of(Hash)
     end
 
-    def test_generates_application_manifest_class
-      assert_match /class ApplicationManifest < Moonshine::Manifest::Rails/, File.read(manifest_path)
+    it "generates ApplicationManifest as a subclass of Moonshine::Manifest::Rails" do
+      manifest_path.read.should match(/class ApplicationManifest < Moonshine::Manifest::Rails/)
     end
 
-    def test_generates_gem_dependencies
-      assert_not_nil YAML.load_file(gems_path).first
+    it "generates gem dependencies" do
+      YAML.load_file(gems_path).first.should_not == nil
     end
 
-    def test_application_is_rails_root_basename
-      assert_equal File.basename(RAILS_ROOT), configuration[:application]
+    it "configures application as rails_root's basename" do
+      configuration[:application].should == File.basename(RAILS_ROOT)
     end
 
-    def test_user_is_rails
-      assert_equal 'rails', configuration[:user]
+    it "configures user as 'rails'" do
+      configuration[:user].should == 'rails'
     end
 
-    def test_ruby_is_ree
-      assert_equal 'ree', configuration[:ruby]
+    it "configures ree as the ruby vm" do
+      configuration[:ruby].should == 'ree'
     end
 
-    def test_domain_is_yourapp_dot_com
-      assert_equal 'yourapp.com', configuration[:domain]
+    it "configures a default value for domain" do
+      configuration[:domain].should == 'yourapp.com'
     end
 
-    def test_deploy_rb_has_simple_configuration
-      assert_equal "server 'yourapp.com', :app, :web, :db, :primary => true\n", deploy_path.read
+    it "creates a simple config/deploy.rb" do
+      deploy_path.read.should == "server 'yourapp.com', :app, :web, :db, :primary => true\n"
     end
     
-    def test_deploy_to_uses_application_name
-      assert_equal "/srv/#{configuration[:application]}", configuration[:deploy_to]
+    it "configures deploy_to to be under /srv under application" do
+      configuration[:deploy_to].should == "/srv/#{configuration[:application]}"
     end
 
-    def test_detects_repository_from_git
-      assert_equal configuration[:repository], `git config remote.origin.url`.chomp
+    it "detects repository from `git config remote.origin.url`" do
+      configuration[:repository].should == `git config remote.origin.url`.chomp
     end
 
     private
@@ -73,19 +70,19 @@ class MoonshineGeneratorTest < Test::Unit::TestCase
     end
 
     def manifest_path
-      "#{generator_rails_root}/app/manifests/application_manifest.rb"
+      generator_rails_root + 'app/manifests/application_manifest.rb'
     end
 
     def gems_path
-      "#{generator_rails_root}/config/gems.yml"
+      generator_rails_root + 'config/gems.yml'
     end
 
     def config_path
-      "#{generator_rails_root}/config/moonshine.yml"
+      generator_rails_root + 'config/moonshine.yml'
     end
 
     def templates_path
-      "#{generator_rails_root}/app/manifests/templates"
+      generator_rails_root + 'app/manifests/templates'
     end
 
     def capfile_path
