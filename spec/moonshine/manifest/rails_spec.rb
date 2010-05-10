@@ -25,7 +25,7 @@ describe Moonshine::Manifest::Rails do
 
   context "default_stack" do
     it "supports mysql" do
-      @manifest.expects(:database_environment).at_least_once.returns({:adapter => 'mysql'})
+      @manifest.should_receive(:database_environment).at_least(:once).and_return({:adapter => 'mysql'})
 
       @manifest.default_stack
 
@@ -58,7 +58,7 @@ describe Moonshine::Manifest::Rails do
     end
 
     it "supports postgresl" do 
-      @manifest.expects(:database_environment).at_least_once.returns({:adapter => 'postgresql' })
+      @manifest.should_receive(:database_environment).at_least(:once).and_return({:adapter => 'postgresql' })
 
       @manifest.default_stack
 
@@ -69,7 +69,7 @@ describe Moonshine::Manifest::Rails do
     end
 
     it "supports sqlite3" do
-      @manifest.expects(:database_environment).at_least_once.returns({:adapter => 'sqlite' })
+      @manifest.should_receive(:database_environment).at_least(:once).and_return({:adapter => 'sqlite' })
 
       @manifest.default_stack
 
@@ -419,7 +419,7 @@ describe Moonshine::Manifest::Rails do
   end
 
   specify "#postgresql_database and #postgresql_user" do
-    @manifest.expects(:database_environment).at_least_once.returns({
+    @manifest.should_receive(:database_environment).at_least(:once).and_return({
       :username => 'pg_username',
       :database => 'pg_database',
       :password => 'pg_password'
