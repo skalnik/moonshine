@@ -268,6 +268,7 @@ namespace :ruby do
   desc 'Forces a reinstall of Ruby and restarts Apache/Passenger'
   task :upgrade do
     install
+    sudo 'gem pristine --all'
     apache.restart
   end
 
@@ -329,7 +330,7 @@ namespace :ruby do
   end
 
   task :install_rubygems do
-    version = fetch(:rubygems_version, '1.3.6')
+    version = fetch(:rubygems_version, '1.3.7')
     run [
       'cd /tmp',
       "sudo rm -rf rubygems-#{version}* || true",
