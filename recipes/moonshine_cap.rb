@@ -42,7 +42,7 @@ set :moonshine_yml do
     YAML::load(ERB.new(moonshine_yml_path.read).result)
   else
     puts "Missing #{moonshine_yml_path}"
-    puts "You can generate one using the moonshine generator. See `ruby script/generate moonshine --help` for details"
+    puts "You can generate one using the moonshine generator. See `./script/generate moonshine --help` (Rails 2.3) or `rails generate moonshine --help` (Rails 3) for details"
     exit(1)
   end
 end
@@ -125,10 +125,11 @@ namespace :app do
     end
   end
 
-  desc 'Run script/console on the first application server'
+  desc 'Run `./script/console` (Rails 2.3) or `rails console` (Rails 3) on the first application server'
   task :console, :roles => :app, :except => {:no_symlink => true} do
     input = ''
-    run "cd #{current_path} && ./script/console #{fetch(:rails_env)}" do |channel, stream, data|
+    console = File.exist?(rails_root.join('script', 'console')) ? "./script/console" : "rails console"
+    run "cd #{current_path} && #{console} #{fetch(:rails_env)}" do |channel, stream, data|
       next if data.chomp == input.chomp || data.chomp == ''
       print data
       channel.send_data(input = $stdin.gets) if data =~ /^(>|\?)>/
@@ -352,6 +353,7 @@ namespace :ruby do
     sudo 'gem install rake --no-rdoc --no-ri'
     sudo 'gem install puppet -v 0.24.8 --no-rdoc --no-ri'
     sudo 'gem install shadow_puppet --no-rdoc --no-ri'
+    sudo 'gem install bundler --no-rdoc --no-ri' if File.exist?(rails_root.join('Gemfile'))
   end
 end
 
