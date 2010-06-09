@@ -4,6 +4,7 @@ describe "MoonshineSetupManifest" do
   before do
     @user = 'user_from_capistrano'
     @application = 'app_from_capistrano'
+
     config = {:user => @user, :application => @application, :deploy_to => '/svr/application'}
     File.open( '/tmp/moonshine.yml', 'w' ) do |out|
       YAML.dump(config, out)
