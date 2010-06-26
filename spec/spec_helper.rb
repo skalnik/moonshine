@@ -14,6 +14,8 @@ require 'shadow_puppet/test'
 
 Spec::Runner.configure do |config|
   config.include Moonshine::Matchers
+  config.include Capistrano::Spec::Matchers
+  config.include Capistrano::Spec::Helpers
   config.include MoonshineHelpers
   config.extend MoonshineHelpers::ClassMethods
 end

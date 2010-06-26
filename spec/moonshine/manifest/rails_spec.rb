@@ -117,7 +117,6 @@ describe Moonshine::Manifest::Rails do
       @manifest.should have_package('webrat')
       @manifest.should have_package('paperclip')
       @manifest.should have_package('libxml2-dev')
-      @manifest.should have_package('imagemagick')
     end
 
   end

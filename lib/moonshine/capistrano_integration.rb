@@ -1,6 +1,8 @@
+require 'pathname'
+
 module Moonshine
   class CapistranoIntegration
-    def self.load_into(capistrano_config)
+    def self.load_defaults_info(capistrano_config)
       capistrano_config.load do
         # these are required at load time by capistrano, we'll set them later
         set :application, ''
@@ -10,7 +12,7 @@ module Moonshine
         set :branch, 'master'
         set :scm, :git
         set :git_enable_submodules, 1
-        set :keep_releases, 2
+        set :keep_releases, 5
         ssh_options[:paranoid] = false
         ssh_options[:forward_agent] = true
         default_run_options[:pty] = true
@@ -21,9 +23,11 @@ module Moonshine
         # set some default values, so we don't have to fetch(:var, :some_default) in multiple places
         set :local_config, []
         set :shared_config, []
-        set :rails_env, 'production'
+        set :stage, nil
+        set :rails_env do
+          self[:stage] || 'production'
+        end
         set :moonshine_manifest, 'application_manifest'
-        set :stage, 'undefined'
         set :app_symlinks, []
         set :ruby, :ree
 
@@ -32,11 +36,6 @@ module Moonshine
           "#{shared_path}/log/#{fetch(:rails_env)}.log"
         end
 
-        # callbacks
-        on :start, 'moonshine:configure'
-        after 'deploy:restart', 'deploy:cleanup'
-
-        require 'pathname'
         set :rails_root, Pathname.new(ENV['RAILS_ROOT'] || Dir.pwd)
         set :moonshine_yml_path, rails_root.join('config', 'moonshine.yml')
 
@@ -51,10 +50,42 @@ module Moonshine
           end
         end
 
+        set :rails_env_moonshine_yml_path  do
+          rails_root.join('config', 'moonshine', "#{rails_env}.yml")
+        end
+
+        set :rails_env_moonshine_yml do
+          if rails_env_moonshine_yml_path.exist?
+            require 'yaml'
+            YAML::load(ERB.new(rails_env_moonshine_yml_path.read).result)
+          else
+            {}
+          end
+        end
+
+      end
+    end
+
+    def self.load_callbacks_into(capistrano_config)
+      capistrano_config.load do
+        on :start, 'moonshine:configure'
+        after 'deploy:restart', 'deploy:cleanup'
+      end
+    end
+
+    def self.load_into(capistrano_config)
+      load_defaults_info(capistrano_config)
+      load_callbacks_into(capistrano_config)
+
+      capistrano_config.load do
         namespace :moonshine do
           desc "[internal]: populate capistrano with settings from moonshine.yml"
           task :configure do
             moonshine_yml.each do |key, value|
+              set key.to_sym, value
+            end
+            
+            rails_env_moonshine_yml.each do |key, value|
               set key.to_sym, value
             end
           end
@@ -85,6 +116,7 @@ module Moonshine
 
           desc 'Apply the Moonshine manifest for this application'
           task :apply, :except => { :no_release => true } do
+            aptget.update
             sudo "RAILS_ROOT=#{latest_release} DEPLOY_STAGE=#{ENV['DEPLOY_STAGE'] || fetch(:stage)} RAILS_ENV=#{fetch(:rails_env)} shadow_puppet #{latest_release}/app/manifests/#{fetch(:moonshine_manifest)}.rb"
           end
 
@@ -182,9 +214,11 @@ module Moonshine
           DESC
           task :upload do
             fetch(:local_config).each do |file|
-              filename = File.split(file).last
+              filename = File.basename(file)
+              path = File.dirname(file)
               if File.exist?(file)
-                parent.upload(file, "#{shared_path}/config/#{filename}")
+                run "mkdir -p '#{shared_path}/#{path}'" unless path.empty?
+                parent.upload(file, "#{shared_path}/#{path}/#{filename}")
               end
             end
           end
@@ -194,8 +228,10 @@ module Moonshine
           DESC
           task :symlink do
             fetch(:local_config).each do |file|
-              filename = File.split(file).last
-              run "ls #{latest_release}/#{file} 2> /dev/null || ln -nfs #{shared_path}/config/#{filename} #{latest_release}/#{file}"
+              filename = File.basename(file)
+              path = File.dirname(file)
+              run "mkdir -p '#{latest_release}/#{path}'" unless path.empty?
+              run "ls #{latest_release}/#{file} 2> /dev/null || ln -nfs #{shared_path}/#{path}/#{filename} #{latest_release}/#{file}"
             end
           end
 
@@ -209,10 +245,13 @@ module Moonshine
           DESC
           task :upload do
             fetch(:shared_config).each do |file|
-              filename = File.split(file).last
-              if File.exist?(file)
-                put File.read(file), "#{shared_path}/config/#{filename}"
-              end
+              file = Pathname.new(file)
+
+              filename = file.basename
+              directory = file.dirname
+
+              run "mkdir -p '#{shared_path}/#{directory}'"
+              parent.upload(file.to_s, "#{shared_path}/#{directory}/#{filename}")
             end
           end
 
@@ -222,10 +261,14 @@ module Moonshine
           DESC
           task :download do
             fetch(:shared_config).each do |file|
-              filename = File.split(file).last
-              if File.exist?(file)
-                get "#{shared_path}/config/#{filename}", file
-              end
+              file = Pathname.new(file)
+
+              filename = file.basename
+              directory = file.dirname
+
+              FileUtils.mkdir_p(directory)
+
+              get "#{shared_path}/#{directory}/#{filename}", file.to_s
             end
           end
 
@@ -234,8 +277,13 @@ module Moonshine
           DESC
           task :symlink do
             fetch(:shared_config).each do |file|
-              filename = File.split(file).last
-              run "ls #{latest_release}/#{file} 2> /dev/null || ln -nfs #{shared_path}/config/#{filename} #{latest_release}/#{file}"
+              file = Pathname.new(file)
+
+              filename = file.basename
+              directory = file.dirname
+
+              run "mkdir -p '#{latest_release}/#{directory}'"
+              run "ls #{latest_release}/#{file} 2> /dev/null || ln -nfs #{shared_path}/#{directory}/#{filename} #{latest_release}/#{file}"
             end
           end
         end
@@ -349,13 +397,12 @@ module Moonshine
           end
 
           task :install_deps do
-            sudo 'apt-get update'
+            aptget.update
             sudo 'apt-get install -q -y build-essential zlib1g-dev libssl-dev libreadline5-dev wget'
           end
 
           task :install_moonshine_deps do
             sudo 'gem install rake --no-rdoc --no-ri'
-            sudo 'gem install puppet -v 0.24.8 --no-rdoc --no-ri'
             sudo 'gem install shadow_puppet --no-rdoc --no-ri'
             sudo 'gem install bundler --no-rdoc --no-ri' if File.exist?(rails_root.join('Gemfile'))
           end
@@ -377,6 +424,12 @@ module Moonshine
                       else nil
                       end
             sudo "apt-get -qq -y install #{package}" if package
+          end
+        end
+
+        namespace :aptget do
+          task :update do
+            sudo 'apt-get update'
           end
         end
       end
